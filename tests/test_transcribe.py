@@ -1,10 +1,9 @@
 import unittest
-from utils import _process_segments, TranscribeResult
+from transcribe import _process_segments, TranscribeResult
 
 
 class TestProcessSegments(unittest.TestCase):
     def setUp(self):
-
         self.token_spans = [
             type("TokenSpan", (object,), {"token": t, "start": i, "end": i + 1})
             for i, t in enumerate(
@@ -82,4 +81,4 @@ class TestProcessSegments(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
-    # python -m unittest test_utils.py
+    # python -m unittest tests/test_transcribe.py
