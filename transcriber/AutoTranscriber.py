@@ -1,4 +1,5 @@
 import logging
+import torch
 import time
 from typing import List, Literal
 
@@ -32,6 +33,7 @@ class AutoTranscriber(Transcriber):
             vad_model=None,  # We'll handle VAD separately
             punc_model=None,
             ban_emo_unks=True,
+            device="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu",
         )
 
     def transcribe(
@@ -87,14 +89,14 @@ class AutoTranscriber(Transcriber):
             if not asr_result:
                 continue
 
-            start_time = max(0, segment[0] / 1000.0 + self.offset_in_seconds)
-            end_time = segment[1] / 1000.0 + self.offset_in_seconds
+            start_segment_time = max(0, segment[0] / 1000.0 + self.offset_in_seconds)
+            end_segment_time = segment[1] / 1000.0 + self.offset_in_seconds
 
             # Convert ASR result to TranscribeResult format
             segment_result = TranscribeResult(
                 text=asr_result[0]["text"],
-                start_time=start_time,  # Convert ms to seconds
-                end_time=end_time,
+                start_time=start_segment_time,  # Convert ms to seconds
+                end_time=end_segment_time,
             )
             results.append(segment_result)
 
