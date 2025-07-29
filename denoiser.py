@@ -5,6 +5,7 @@ from librosa import stft, istft
 import onnxruntime
 import torch
 import gc
+import os
 from resampy.core import resample
 
 stft_hop_length = 420
@@ -26,8 +27,13 @@ opts.intra_op_num_threads = 4
 opts.enable_mem_pattern = True
 opts.enable_cpu_mem_arena = True
 
+print(__file__)
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'denoiser.onnx')
+MODEL_PATH = os.path.abspath(MODEL_PATH)
+
 session = onnxruntime.InferenceSession(
-    "models/denoiser.onnx",
+    MODEL_PATH,
     providers=PROVIDERS,
     sess_options=opts,
 )

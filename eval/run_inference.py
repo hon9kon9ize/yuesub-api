@@ -1,15 +1,14 @@
+import argparse
 import json
+import os
+import torch
+import unicodedata
+import re
 from dataclasses import dataclass
 from datasets import load_dataset
-from jiwer import cer
-from opencc import OpenCC
 from tqdm.auto import tqdm
 from transcriber.AutoTranscriber import AutoTranscriber
 from typing import Dict, List
-import os
-import torch
-import re
-import unicodedata
 
 # Config
 DATASET_CONFIGS = {
@@ -17,33 +16,15 @@ DATASET_CONFIGS = {
         "audio_key": "audio",
         "text_key": "transcript",
         "split": "test",
-        "sample_size": 100,
+        "sample_size": 1000,
     },
     "JackyHoCL/common_voice_22_yue": {
         "audio_key": "audio",
         "text_key": "sentence",
         "split": "test",
-        "sample_size": 100,
+        "sample_size": 1000,
     },
 }
-
-opencc = OpenCC("hk2s")
-
-
-def remove_punctuation(text: str) -> str:
-    return "".join(ch for ch in text if unicodedata.category(ch)[0] != "P")
-
-
-def remove_spaces(text: str):
-    return re.sub(r"\s+", "", text)
-
-
-def post_process(text: str) -> str:
-    text = opencc.convert(text)
-    text = remove_punctuation(text)
-    text = remove_spaces(text)
-    return text
-
 
 def run_asr_eval(transcriber, dataset_name, jsonl_writer):
     cfg = DATASET_CONFIGS[dataset_name]
@@ -53,9 +34,6 @@ def run_asr_eval(transcriber, dataset_name, jsonl_writer):
         .take(cfg["sample_size"])
     )
 
-    all_preds, all_labels = [], []
-
-    # inner progress bar knows its total length
     with tqdm(
         ds,
         desc=f"[{dataset_name.split('/')[-1]}]",
@@ -72,34 +50,52 @@ def run_asr_eval(transcriber, dataset_name, jsonl_writer):
                 results = transcriber.transcribe_audio_bytes(audio, sample_rate)
             prediction = "".join([res.text for res in results])
 
-            ref = post_process(text)
-            hyp = post_process(prediction)
-
             jsonl_writer.write(
                 json.dumps(
-                    {"dataset": dataset_name, "reference": ref, "hypothesis": hyp},
+                    {"dataset": dataset_name, "reference": text, "prediction": prediction},
                     ensure_ascii=False,
                 )
                 + "\n"
             )
 
-            all_labels.append(ref)
-            all_preds.append(hyp)
+def main():
+    parser = argparse.ArgumentParser(description="Run ASR evaluation with configurable corrector")
+    parser.add_argument(
+        "--corrector",
+        type=str,
+        default="opencc",
+        help="Text corrector to apply (e.g., opencc, none)",
+    )
+    parser.add_argument(
+        "--use_denoiser",
+        action="store_true",
+        help="Whether to enable denoiser",
+    )
+    parser.add_argument(
+        "--with_punct",
+        action="store_true",
+        help="Whether to include punctuation in the output",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=".",
+        help="Directory to save the output JSONL file",
+    )
+    args = parser.parse_args()
 
-            # update CER as a postfix every few utterances
-            if len(all_preds) % 5 == 0:
-                curr_cer = cer(all_labels, all_preds)
-                pbar.set_postfix(cer=f"{curr_cer:.2%}")
+    # Construct flags for filename based on parameters
+    denoiser_flag = "denoiser" if args.use_denoiser else "no_denoiser"
+    punct_flag = "punct" if args.with_punct else "no_punct"
+    # Prepare output file path reflecting all params
+    filename = f"asr_results_corrector_{args.corrector}_{denoiser_flag}_{punct_flag}.jsonl"
+    output_path = os.path.join(args.output_dir, filename)
 
-    cer_score = cer(all_labels, all_preds)
-    tqdm.write(f"ASR CER on {dataset_name}: {cer_score:.3%}")
-
-
-if __name__ == "__main__":
-    output_path = "asr_results.jsonl"
-    with open(output_path, "w", encoding="utf-8") as jsonl_file:
+    with open(f'output/{output_path}', "w", encoding="utf-8") as jsonl_file:
         transcriber = AutoTranscriber(
-            corrector="opencc", use_denoiser=False, with_punct=False
+            corrector=args.corrector,
+            use_denoiser=args.use_denoiser,
+            with_punct=args.with_punct,
         )
 
         with tqdm(
@@ -110,7 +106,12 @@ if __name__ == "__main__":
         ) as ds_bar:
             for ds_name in ds_bar:
                 run_asr_eval(transcriber, ds_name, jsonl_file)
-                ds_bar.update(0)  # ensure bar stays correct if nested updates
+                # force bar refresh
+                ds_bar.update(0)
+
     print(f"Results written to {output_path}")
-    # To workaround https://github.com/huggingface/datasets/issues/7467
+    # Workaround for https://github.com/huggingface/datasets/issues/7467
     os._exit(0)
+
+if __name__ == "__main__":
+    main()

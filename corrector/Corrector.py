@@ -2,6 +2,7 @@ from collections import defaultdict
 from itertools import product
 
 import opencc
+import os
 import pandas as pd
 from typing import Literal
 import re
@@ -33,15 +34,29 @@ class Corrector:
             ]
 
         elif corrector == "bert":
-            self.t2s_char_dict, self.char_jyutping_dict, self.jyutping_char_dict,  self.chars_freq = self._load_dict()
-            self.bert_model = BertModel(
-                "./models/hon9kon9ize/bert-large-cantonese")
+            (
+                self.t2s_char_dict,
+                self.char_jyutping_dict,
+                self.jyutping_char_dict,
+                self.chars_freq,
+            ) = self._load_dict()
+            model_path = os.path.join(
+                os.path.dirname(__file__),
+                "../models/hon9kon9ize/bert-large-cantonese",
+            )
+            self.bert_model = BertModel(model_path)
 
     def _load_dict(
         self,
-        t2s_dict_file="./data/STCharacters.txt",
-        jyutping_dict_file="./data/jyut6ping3.chars.dict.tsv",
-        chars_freq_dict_file="./data/chars_freq.tsv",
+        t2s_dict_file=os.path.join(
+            os.path.dirname(__file__), "../data/STCharacters.txt"
+        ),
+        jyutping_dict_file=os.path.join(
+            os.path.dirname(__file__), "../data/jyut6ping3.chars.dict.tsv"
+        ),
+        chars_freq_dict_file=os.path.join(
+            os.path.dirname(__file__), "../data/chars_freq.tsv"
+        ),
     ):
         """Load Jyutping dictionary, character frequency dictionary, and traditional to simplified mapping.
 
@@ -60,12 +75,14 @@ class Corrector:
         """
         # Load character frequencies
         chars_freq_df = pd.read_csv(
-            chars_freq_dict_file, sep="\t", names=["char", "freq"])
+            chars_freq_dict_file, sep="\t", names=["char", "freq"]
+        )
         chars_freq = dict(zip(chars_freq_df.char, chars_freq_df.freq))
 
         # Load jyutping dictionary
         jyutping_df = pd.read_csv(
-            jyutping_dict_file, sep="\t", names=["char", "jyutping"])
+            jyutping_dict_file, sep="\t", names=["char", "jyutping"]
+        )
 
         # Create char_jyutping_dict
         char_jyutping_dict = defaultdict(list)
@@ -86,8 +103,9 @@ class Corrector:
 
         # Load traditional to simplified mapping
         t2s_char_dict = {}
-        t2s_df = pd.read_csv(t2s_dict_file, sep="\t", names=[
-            "sc", "tc"], encoding="utf-8")
+        t2s_df = pd.read_csv(
+            t2s_dict_file, sep="\t", names=["sc", "tc"], encoding="utf-8"
+        )
         for _, row in t2s_df.iterrows():
             t2s_char_dict[row["sc"]] = row["tc"].split()
 
@@ -122,8 +140,7 @@ class Corrector:
 
     def lm_correct(self, text: str) -> str:
         # Get candidates for each character
-        char_candidates = [self.t2s_char_dict.get(
-            char, [char]) for char in text]
+        char_candidates = [self.t2s_char_dict.get(char, [char]) for char in text]
 
         # If no characters need correction, return original
         if all(len(candidates) == 1 for candidates in char_candidates):
