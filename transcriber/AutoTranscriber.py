@@ -1,3 +1,4 @@
+import io
 import logging
 import torch
 import time
@@ -32,11 +33,14 @@ class AutoTranscriber(Transcriber):
             punc_model=None,
             ban_emo_unks=True,
             device="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu",
+            batch_size=self.batch_size,
         )
+        if self.quiet:
+            logger.setLevel(logging.ERROR)
 
     def transcribe(
         self,
-        audio_file: str,
+        audio_file: str
     ) -> List[TranscribeResult]:
         """
         Transcribe audio file to text with timestamps.
@@ -47,15 +51,20 @@ class AutoTranscriber(Transcriber):
         Returns:
             List[TranscribeResult]: List of transcription results
         """
-        # Load and preprocess audio
         speech, sr = librosa.load(audio_file, sr=None)
+        return self.transcribe_audio_bytes(speech, sr)
 
+    def transcribe_audio_bytes(
+        self,
+        speech: bytes,
+        sample_rate: int
+    ) -> List[TranscribeResult]:
         if self.use_denoiser:
             logger.info("Denoising speech...")
-            speech, _ = denoiser(speech, sr)
+            speech, _ = denoiser(speech, sample_rate)
 
-        if sr != 16_000:
-            speech = resample(speech, sr, 16_000,
+        if sample_rate != 16_000:
+            speech = resample(speech, sample_rate, 16_000,
                               filter="kaiser_best", parallel=True)
 
         # Get VAD segments
@@ -77,23 +86,20 @@ class AutoTranscriber(Transcriber):
         results = []
 
         start_time = time.time()
-        for segment in tqdm(vad_results, desc="Transcribing"):
-            segment_audio = speech[segment["start"] : segment["end"]]
-
-            # Get ASR results for segment
-            asr_result = self.asr_model.generate(
-                input=segment_audio, language="yue", use_itn=self.with_punct, disable_pbar=True
-            )
-
+        speech_segments = [speech[segment["start"] : segment["end"]] for segment in vad_results]
+        # Run ASR on all segments.
+        asr_results = self.asr_model.generate(
+            input=speech_segments, language="yue", use_itn=self.with_punct, disable_pbar=True
+        )
+        for asr_result, segment in zip(asr_results, vad_results):
             if not asr_result:
                 continue
-
             start_segment_time = max(0, segment['start'] / 16_000.0 + self.offset_in_seconds)
             end_segment_time = segment['end'] / 16_000.0  + self.offset_in_seconds
 
             # Convert ASR result to TranscribeResult format
             segment_result = TranscribeResult(
-                text=asr_result[0]["text"],
+                text=asr_result["text"],
                 start_time=start_segment_time,  # Convert ms to seconds
                 end_time=end_segment_time,
             )

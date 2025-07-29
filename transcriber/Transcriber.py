@@ -30,6 +30,8 @@ class Transcriber:
         offset_in_seconds=-0.25,
         max_length_seconds=10,
         sr=16000,
+        quiet=False,
+        batch_size=8,
     ):
         self.corrector = corrector
         self.use_denoiser = use_denoiser
@@ -37,10 +39,18 @@ class Transcriber:
         self.sr = sr
         self.max_length_seconds = max_length_seconds
         self.offset_in_seconds = offset_in_seconds
+        self.quiet = quiet
+        self.batch_size = batch_size
 
     def transcribe(
         self,
         audio_file: str,
+    ):
+        raise NotImplementedError
+
+    def transcribe_audio_bytes(
+        self,
+        audio_bytes: bytes,
     ):
         raise NotImplementedError
 
